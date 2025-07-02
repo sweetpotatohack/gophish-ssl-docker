@@ -5,8 +5,8 @@
 
 set -e
 
-DOMAIN=${1:-"auth.bankerlopes.com"}
-EMAIL=${2:-"support@bankerlopes.com"}
+DOMAIN=${1:-"your_domain"}
+EMAIL=${2:-"your_mail"}
 SSL_DIR="./ssl"
 CONTAINER_NAME="gophish-ssl"
 
