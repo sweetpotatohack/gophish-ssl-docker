@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  gophish:
+    build: .
+    container_name: gophish-ssl
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "3333:3333"
+    volumes:
+      - ./ssl:/opt/gophish/ssl:ro
+      - ./data:/opt/gophish/data
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    environment:
+      - TZ=UTC
+    networks:
+      - gophish-net
+
+networks:
+  gophish-net:
+    driver: bridge
