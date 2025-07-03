@@ -1,19 +1,23 @@
 #!/bin/bash
 
-# GoPhish SSL Certificate Manager
-# Скрипт для управления SSL сертификатами Let's Encrypt
+# GoPhish SSL Certificate Manager v2.0
+# Скрипт для управления SSL сертификатами Let's Encrypt с Docker
 
 set -e
 
-DOMAIN=${1:-"your_domain"}
-EMAIL=${2:-"your_mail"}
+# Правильный парсинг параметров
+COMMAND=${1:-"help"}
+DOMAIN=${2:-"your_domain"}
+EMAIL=${3:-"your_mail"}
 SSL_DIR="./ssl"
+DATA_DIR="./data"
 CONTAINER_NAME="gophish-ssl"
 
 # Цвета для вывода
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
 log_info() {
@@ -28,34 +32,100 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+log_debug() {
+    echo -e "${BLUE}[DEBUG]${NC} $1"
+}
+
 show_help() {
-    echo "GoPhish SSL Certificate Manager"
+    echo "GoPhish SSL Certificate Manager v2.0"
     echo ""
     echo "Использование: $0 [COMMAND] [DOMAIN] [EMAIL]"
     echo ""
     echo "Команды:"
+    echo "  setup     - Установить все зависимости (Docker, Certbot)"
     echo "  obtain    - Получить новый SSL сертификат"
     echo "  renew     - Обновить существующий сертификат"
     echo "  install   - Установить сертификаты в GoPhish"
     echo "  check     - Проверить статус сертификата"
     echo "  restart   - Перезапустить GoPhish контейнер"
+    echo "  build     - Собрать Docker образ"
+    echo "  deploy    - Полный деплой (build + up)"
+    echo "  logs      - Показать логи контейнера"
+    echo "  status    - Показать статус сервисов"
     echo "  help      - Показать эту справку"
     echo ""
     echo "Примеры:"
-    echo "  $0 obtain auth.bankerlopes.com support@bankerlopes.com"
-    echo "  $0 renew"
-    echo "  $0 install"
-    echo "  $0 check"
+    echo "  $0 setup                                              # Установить зависимости"
+    echo "  $0 obtain mans.infosec.cfd user@example.com          # Получить SSL"
+    echo "  $0 build                                              # Собрать образ"
+    echo "  $0 deploy                                             # Запустить всё"
+    echo "  $0 status                                             # Проверить статус"
+}
+
+setup_dependencies() {
+    log_info "Установка необходимых зависимостей..."
+    
+    # Обновляем пакеты
+    apt update
+    
+    # Устанавливаем Docker
+    if ! command -v docker &> /dev/null; then
+        log_info "Устанавливаем Docker..."
+        apt install -y docker.io
+        systemctl start docker
+        systemctl enable docker
+        log_info "Docker установлен и запущен!"
+    else
+        log_info "Docker уже установлен"
+    fi
+    
+    # Устанавливаем Docker Compose
+    if ! command -v docker-compose &> /dev/null; then
+        log_info "Устанавливаем Docker Compose..."
+        apt install -y docker-compose
+        log_info "Docker Compose установлен!"
+    else
+        log_info "Docker Compose уже установлен"
+    fi
+    
+    # Устанавливаем Certbot
+    if ! command -v certbot &> /dev/null; then
+        log_info "Устанавливаем Certbot..."
+        apt install -y certbot
+        log_info "Certbot установлен!"
+    else
+        log_info "Certbot уже установлен"
+    fi
+    
+    # Устанавливаем дополнительные утилиты
+    apt install -y curl git openssl
+    
+    log_info "Все зависимости установлены!"
 }
 
 check_prerequisites() {
     if ! command -v docker &> /dev/null; then
-        log_error "Docker не установлен!"
+        log_error "Docker не установлен! Запустите: $0 setup"
         exit 1
     fi
 
     if ! command -v certbot &> /dev/null; then
-        log_error "Certbot не установлен! Установите: apt install certbot"
+        log_error "Certbot не установлен! Запустите: $0 setup"
+        exit 1
+    fi
+}
+
+validate_params() {
+    if [ "$DOMAIN" = "your_domain" ] || [ "$EMAIL" = "your_mail" ]; then
+        log_error "Не указан домен или email!"
+        log_error "Использование: $0 obtain DOMAIN EMAIL"
+        log_error "Пример: $0 obtain mans.infosec.cfd dmitriyvisotskiydr15061991@gmail.com"
+        exit 1
+    fi
+    
+    # Проверяем валидность email
+    if ! [[ "$EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+        log_error "Неверный формат email: $EMAIL"
         exit 1
     fi
 }
@@ -63,7 +133,7 @@ check_prerequisites() {
 stop_container() {
     if docker ps -q -f name=${CONTAINER_NAME} | grep -q .; then
         log_info "Останавливаем контейнер GoPhish..."
-        docker stop ${CONTAINER_NAME} || true
+        docker-compose down || true
     fi
 }
 
@@ -72,11 +142,22 @@ start_container() {
     docker-compose up -d
 }
 
+build_image() {
+    log_info "Сборка Docker образа GoPhish..."
+    docker-compose build --no-cache
+    log_info "Docker образ собран!"
+}
+
 obtain_certificate() {
     log_info "Получение нового SSL сертификата для домена: $DOMAIN"
+    log_info "Email для уведомлений: $EMAIL"
     
+    validate_params
+    
+    # Останавливаем контейнер если запущен
     stop_container
     
+    # Получаем сертификат
     certbot certonly --standalone \
         -d "$DOMAIN" \
         --non-interactive \
@@ -84,7 +165,10 @@ obtain_certificate() {
         --email "$EMAIL" \
         --force-renewal
     
+    # Устанавливаем сертификаты
     install_certificates
+    
+    # Запускаем контейнер
     start_container
     
     log_info "SSL сертификат успешно получен и установлен!"
@@ -127,7 +211,7 @@ install_certificates() {
         log_info "Создание самоподписанного сертификата для админки..."
         openssl req -newkey rsa:2048 -nodes -keyout "$SSL_DIR/gophish_admin.key" \
             -x509 -days 365 -out "$SSL_DIR/gophish_admin.crt" \
-            -subj "/C=US/ST=State/L=City/O=Organization/CN=gophish-admin"
+            -subj "/C=US/ST=State/L=City/O=GoPhish/CN=gophish-admin"
         chmod 600 "$SSL_DIR/gophish_admin.key"
         chmod 644 "$SSL_DIR/gophish_admin.crt"
     fi
@@ -166,8 +250,73 @@ restart_container() {
     log_info "Контейнер перезапущен!"
 }
 
+show_logs() {
+    log_info "Показ логов GoPhish..."
+    docker-compose logs -f --tail=50
+}
+
+show_status() {
+    log_info "Статус сервисов GoPhish:"
+    echo ""
+    
+    # Docker Compose статус
+    docker-compose ps
+    echo ""
+    
+    # Проверка портов
+    log_info "Проверка портов:"
+    if ss -tlnp | grep -q ":3333"; then
+        echo "✅ Порт 3333 (Admin HTTPS) - активен"
+    else
+        echo "❌ Порт 3333 (Admin HTTPS) - не активен"
+    fi
+    
+    if ss -tlnp | grep -q ":443"; then
+        echo "✅ Порт 443 (Phishing HTTPS) - активен"
+    else
+        echo "❌ Порт 443 (Phishing HTTPS) - не активен"
+    fi
+    
+    if ss -tlnp | grep -q ":80"; then
+        echo "✅ Порт 80 (HTTP Redirect) - активен"
+    else
+        echo "❌ Порт 80 (HTTP Redirect) - не активен"
+    fi
+    
+    echo ""
+    log_info "URLs:"
+    echo "🔐 Admin panel: https://localhost:3333"
+    echo "🎯 Phishing server: https://localhost:443"
+    echo "📝 Default login: admin / gophish"
+}
+
+deploy_all() {
+    log_info "Полный деплой GoPhish SSL..."
+    
+    # Проверяем зависимости
+    check_prerequisites
+    
+    # Создаём директории
+    mkdir -p "$SSL_DIR" "$DATA_DIR"
+    
+    # Собираем образ
+    build_image
+    
+    # Запускаем
+    start_container
+    
+    # Показываем статус
+    sleep 5
+    show_status
+    
+    log_info "Деплой завершён!"
+}
+
 # Главная логика
-case "${1:-help}" in
+case "$COMMAND" in
+    "setup")
+        setup_dependencies
+        ;;
     "obtain")
         check_prerequisites
         obtain_certificate
@@ -184,6 +333,18 @@ case "${1:-help}" in
         ;;
     "restart")
         restart_container
+        ;;
+    "build")
+        build_image
+        ;;
+    "deploy")
+        deploy_all
+        ;;
+    "logs")
+        show_logs
+        ;;
+    "status")
+        show_status
         ;;
     "help"|*)
         show_help

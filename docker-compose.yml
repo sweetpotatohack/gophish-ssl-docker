@@ -4,18 +4,28 @@ services:
   gophish:
     build: .
     container_name: gophish-ssl
-    restart: unless-stopped
     ports:
-      - "443:443"
-      - "3333:3333"
+      - "3333:3333"   # Admin interface (HTTPS)
+      - "443:443"     # Phishing server (HTTPS) 
+      - "80:80"       # HTTP redirect to HTTPS
     volumes:
-      - ./ssl:/opt/gophish/ssl:ro
-      - ./data:/opt/gophish/data
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-    environment:
-      - TZ=UTC
+      - ./ssl:/opt/gophish/ssl:rw        # SSL certificates
+      - ./data:/opt/gophish/data:rw      # Database and data
+      - gophish_logs:/opt/gophish/logs   # Logs
     networks:
       - gophish-net
+    restart: unless-stopped
+    environment:
+      - GOPHISH_INITIAL_ADMIN_PASSWORD=gophish
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:3333/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  gophish_logs:
 
 networks:
   gophish-net:
