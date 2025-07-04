@@ -1,46 +1,31 @@
-# SSL сертификаты
-ssl/
-letsencrypt/
+# SSL certificates and keys
+ssl/*.key
+ssl/*.crt
 
-# Данные GoPhish
+# Database files
 data/
 *.db
-*.log
 
-# Docker
-.dockerignore
+# Config with sensitive data
+config/config.json
 
-# Системные файлы
-.DS_Store
-Thumbs.db
-
-# Логи
+# Logs
 logs/
 *.log
 
-# Временные файлы
-*.tmp
-*.temp
+# Docker volumes
+.docker/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
 *.swp
 *.swo
 
-# Конфиги с паролями
-config.json
-
-# Backup файлы
+# Backup files
 *.backup
-*.bak
-
-# IDE
-.vscode/
-.idea/
-*.sublime-*
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+Dockerfile.backup

@@ -2,27 +2,23 @@ version: '3.8'
 
 services:
   gophish:
-    build: .
+    image: gophish/gophish:latest
     container_name: gophish-ssl
     ports:
       - "3333:3333"   # Admin interface (HTTPS)
-      - "443:443"     # Phishing server (HTTPS) 
+      - "443:443"     # Phishing server (HTTPS)
       - "80:80"       # HTTP redirect to HTTPS
     volumes:
-      - ./ssl:/opt/gophish/ssl:rw        # SSL certificates
+      - ./ssl:/opt/gophish/ssl:rw        # SSL certificates (read-write for now)
       - ./data:/opt/gophish/data:rw      # Database and data
+      - ./config/config.json:/opt/gophish/config.json:ro  # Config file
       - gophish_logs:/opt/gophish/logs   # Logs
     networks:
       - gophish-net
     restart: unless-stopped
     environment:
       - GOPHISH_INITIAL_ADMIN_PASSWORD=gophish
-    healthcheck:
-      test: ["CMD", "curl", "-f", "-k", "https://localhost:3333/login"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    user: "0:0"  # Run as root to access SSL files
 
 volumes:
   gophish_logs:

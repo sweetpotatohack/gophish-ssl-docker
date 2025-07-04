@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# GoPhish SSL Certificate Manager v2.0
+# GoPhish SSL Certificate Manager v3.0
 # Скрипт для управления SSL сертификатами Let's Encrypt с Docker
 
 set -e
@@ -11,6 +11,7 @@ DOMAIN=${2:-"your_domain"}
 EMAIL=${3:-"your_mail"}
 SSL_DIR="./ssl"
 DATA_DIR="./data"
+CONFIG_DIR="./config"
 CONTAINER_NAME="gophish-ssl"
 
 # Цвета для вывода
@@ -37,7 +38,7 @@ log_debug() {
 }
 
 show_help() {
-    echo "GoPhish SSL Certificate Manager v2.0"
+    echo "GoPhish SSL Certificate Manager v3.0"
     echo ""
     echo "Использование: $0 [COMMAND] [DOMAIN] [EMAIL]"
     echo ""
@@ -49,15 +50,14 @@ show_help() {
     echo "  check     - Проверить статус сертификата"
     echo "  restart   - Перезапустить GoPhish контейнер"
     echo "  build     - Собрать Docker образ"
-    echo "  deploy    - Полный деплой (build + up)"
+    echo "  deploy    - Полный деплой (pull + up)"
     echo "  logs      - Показать логи контейнера"
     echo "  status    - Показать статус сервисов"
     echo "  help      - Показать эту справку"
     echo ""
     echo "Примеры:"
     echo "  $0 setup                                              # Установить зависимости"
-    echo "  $0 obtain mans.infosec.cfd user@example.com          # Получить SSL"
-    echo "  $0 build                                              # Собрать образ"
+    echo "  $0 obtain yura.infosec.cfd user@example.com          # Получить SSL"
     echo "  $0 deploy                                             # Запустить всё"
     echo "  $0 status                                             # Проверить статус"
 }
@@ -119,7 +119,7 @@ validate_params() {
     if [ "$DOMAIN" = "your_domain" ] || [ "$EMAIL" = "your_mail" ]; then
         log_error "Не указан домен или email!"
         log_error "Использование: $0 obtain DOMAIN EMAIL"
-        log_error "Пример: $0 obtain mans.infosec.cfd dmitriyvisotskiydr15061991@gmail.com"
+        log_error "Пример: $0 obtain yura.infosec.cfd theskill19@yandex.ru"
         exit 1
     fi
     
@@ -140,12 +140,6 @@ stop_container() {
 start_container() {
     log_info "Запускаем контейнер GoPhish..."
     docker-compose up -d
-}
-
-build_image() {
-    log_info "Сборка Docker образа GoPhish..."
-    docker-compose build --no-cache
-    log_info "Docker образ собран!"
 }
 
 obtain_certificate() {
@@ -297,10 +291,7 @@ deploy_all() {
     check_prerequisites
     
     # Создаём директории
-    mkdir -p "$SSL_DIR" "$DATA_DIR"
-    
-    # Собираем образ
-    build_image
+    mkdir -p "$SSL_DIR" "$DATA_DIR" "$CONFIG_DIR"
     
     # Запускаем
     start_container
@@ -333,9 +324,6 @@ case "$COMMAND" in
         ;;
     "restart")
         restart_container
-        ;;
-    "build")
-        build_image
         ;;
     "deploy")
         deploy_all

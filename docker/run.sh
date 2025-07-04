@@ -33,25 +33,6 @@ check_admin_ssl() {
     fi
 }
 
-# Wait for SSL certificates if they are being generated
-wait_for_ssl() {
-    local max_wait=30
-    local count=0
-    
-    while [[ $count -lt $max_wait ]]; do
-        if [[ -f "./ssl/letsencrypt.crt" && -f "./ssl/letsencrypt.key" ]]; then
-            echo "[INFO] SSL certificates ready!"
-            return 0
-        fi
-        echo "[INFO] Waiting for SSL certificates... ($count/$max_wait)"
-        sleep 2
-        ((count++))
-    done
-    
-    echo "[WARN] Timeout waiting for SSL certificates, proceeding with self-signed"
-    return 1
-}
-
 # Main startup sequence
 main() {
     echo "==================================="
