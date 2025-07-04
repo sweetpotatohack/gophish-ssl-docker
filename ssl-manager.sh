@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# GoPhish SSL Certificate Manager v3.0
+# GoPhish SSL Certificate Manager v3.1
 # Скрипт для управления SSL сертификатами Let's Encrypt с Docker
 
 set -e
@@ -38,28 +38,36 @@ log_debug() {
 }
 
 show_help() {
-    echo "GoPhish SSL Certificate Manager v3.0"
+    echo "GoPhish SSL Certificate Manager v3.1"
     echo ""
     echo "Использование: $0 [COMMAND] [DOMAIN] [EMAIL]"
     echo ""
     echo "Команды:"
-    echo "  setup     - Установить все зависимости (Docker, Certbot)"
-    echo "  obtain    - Получить новый SSL сертификат"
-    echo "  renew     - Обновить существующий сертификат"
-    echo "  install   - Установить сертификаты в GoPhish"
-    echo "  check     - Проверить статус сертификата"
-    echo "  restart   - Перезапустить GoPhish контейнер"
-    echo "  build     - Собрать Docker образ"
-    echo "  deploy    - Полный деплой (pull + up)"
-    echo "  logs      - Показать логи контейнера"
-    echo "  status    - Показать статус сервисов"
-    echo "  help      - Показать эту справку"
+    echo "  setup         - Установить все зависимости (Docker, Certbot)"
+    echo "  obtain-admin  - Получить SSL сертификат для админ панели (порт 3333)"
+    echo "  obtain-phish  - Получить SSL сертификат для фиш сервера (порт 443)"
+    echo "  renew-admin   - Обновить сертификат админ панели"
+    echo "  renew-phish   - Обновить сертификат фиш сервера"
+    echo "  renew-all     - Обновить все сертификаты"
+    echo "  check-admin   - Проверить статус сертификата админки"
+    echo "  check-phish   - Проверить статус сертификата фиш сервера"
+    echo "  restart       - Перезапустить GoPhish контейнер"
+    echo "  deploy        - Полный деплой (pull + up)"
+    echo "  logs          - Показать логи контейнера"
+    echo "  status        - Показать статус сервисов"
+    echo "  help          - Показать эту справку"
     echo ""
     echo "Примеры:"
-    echo "  $0 setup                                              # Установить зависимости"
-    echo "  $0 obtain yura.infosec.cfd user@example.com          # Получить SSL"
-    echo "  $0 deploy                                             # Запустить всё"
-    echo "  $0 status                                             # Проверить статус"
+    echo "  $0 setup                                                    # Установить зависимости"
+    echo "  $0 obtain-admin admin.example.com admin@example.com        # SSL для админки"
+    echo "  $0 obtain-phish phish.example.com admin@example.com        # SSL для фишинга"
+    echo "  $0 deploy                                                   # Запустить всё"
+    echo "  $0 status                                                   # Проверить статус"
+    echo ""
+    echo "Архитектура:"
+    echo "  🔐 Admin Panel: https://admin.example.com:3333 (Let's Encrypt SSL)"
+    echo "  🎯 Phish Server: https://phish.example.com:443 (Let's Encrypt SSL)"
+    echo "  📝 HTTP Redirect: http://phish.example.com:80 → HTTPS"
 }
 
 setup_dependencies() {
@@ -118,8 +126,8 @@ check_prerequisites() {
 validate_params() {
     if [ "$DOMAIN" = "your_domain" ] || [ "$EMAIL" = "your_mail" ]; then
         log_error "Не указан домен или email!"
-        log_error "Использование: $0 obtain DOMAIN EMAIL"
-        log_error "Пример: $0 obtain yura.infosec.cfd theskill19@yandex.ru"
+        log_error "Использование: $0 $COMMAND DOMAIN EMAIL"
+        log_error "Пример: $0 $COMMAND admin.example.com admin@example.com"
         exit 1
     fi
     
@@ -142,8 +150,9 @@ start_container() {
     docker-compose up -d
 }
 
-obtain_certificate() {
-    log_info "Получение нового SSL сертификата для домена: $DOMAIN"
+obtain_admin_certificate() {
+    log_info "Получение SSL сертификата для АДМИН ПАНЕЛИ"
+    log_info "Домен: $DOMAIN (будет доступен на порту 3333)"
     log_info "Email для уведомлений: $EMAIL"
     
     validate_params
@@ -159,30 +168,72 @@ obtain_certificate() {
         --email "$EMAIL" \
         --force-renewal
     
-    # Устанавливаем сертификаты
-    install_certificates
+    # Устанавливаем сертификаты для админки
+    install_admin_certificates
+    
+    # Обновляем конфигурацию
+    update_config
     
     # Запускаем контейнер
     start_container
     
-    log_info "SSL сертификат успешно получен и установлен!"
+    log_info "SSL сертификат для админ панели успешно получен и установлен!"
+    log_info "Admin Panel: https://$DOMAIN:3333"
 }
 
-renew_certificate() {
-    log_info "Обновление SSL сертификата для домена: $DOMAIN"
+obtain_phish_certificate() {
+    log_info "Получение SSL сертификата для ФИШ СЕРВЕРА"
+    log_info "Домен: $DOMAIN (будет доступен на порту 443)"
+    log_info "Email для уведомлений: $EMAIL"
     
+    validate_params
+    
+    # Останавливаем контейнер если запущен
     stop_container
     
-    certbot renew --force-renewal
+    # Получаем сертификат
+    certbot certonly --standalone \
+        -d "$DOMAIN" \
+        --non-interactive \
+        --agree-tos \
+        --email "$EMAIL" \
+        --force-renewal
     
-    install_certificates
+    # Устанавливаем сертификаты для фиш сервера
+    install_phish_certificates
+    
+    # Обновляем конфигурацию
+    update_config
+    
+    # Запускаем контейнер
     start_container
     
-    log_info "SSL сертификат успешно обновлен!"
+    log_info "SSL сертификат для фиш сервера успешно получен и установлен!"
+    log_info "Phish Server: https://$DOMAIN:443"
 }
 
-install_certificates() {
-    log_info "Установка SSL сертификатов..."
+install_admin_certificates() {
+    log_info "Установка SSL сертификатов для админ панели..."
+    
+    mkdir -p "$SSL_DIR"
+    
+    if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+        cp "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$SSL_DIR/gophish_admin.crt"
+        cp "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$SSL_DIR/gophish_admin.key"
+        
+        # Устанавливаем правильные права доступа
+        chmod 644 "$SSL_DIR/gophish_admin.crt"
+        chmod 600 "$SSL_DIR/gophish_admin.key"
+        
+        log_info "SSL сертификаты админ панели установлены в $SSL_DIR/"
+    else
+        log_error "SSL сертификат не найден для домена $DOMAIN"
+        exit 1
+    fi
+}
+
+install_phish_certificates() {
+    log_info "Установка SSL сертификатов для фиш сервера..."
     
     mkdir -p "$SSL_DIR"
     
@@ -194,13 +245,19 @@ install_certificates() {
         chmod 644 "$SSL_DIR/letsencrypt.crt"
         chmod 600 "$SSL_DIR/letsencrypt.key"
         
-        log_info "SSL сертификаты успешно установлены в $SSL_DIR/"
+        log_info "SSL сертификаты фиш сервера установлены в $SSL_DIR/"
     else
         log_error "SSL сертификат не найден для домена $DOMAIN"
         exit 1
     fi
+}
+
+create_self_signed_certificates() {
+    log_info "Создание самоподписанных сертификатов для разработки..."
     
-    # Генерируем самоподписанный сертификат для админки, если его нет
+    mkdir -p "$SSL_DIR"
+    
+    # Создаем самоподписанный сертификат для админки если нет Let's Encrypt
     if [ ! -f "$SSL_DIR/gophish_admin.crt" ]; then
         log_info "Создание самоподписанного сертификата для админки..."
         openssl req -newkey rsa:2048 -nodes -keyout "$SSL_DIR/gophish_admin.key" \
@@ -209,18 +266,144 @@ install_certificates() {
         chmod 600 "$SSL_DIR/gophish_admin.key"
         chmod 644 "$SSL_DIR/gophish_admin.crt"
     fi
+    
+    # Создаем самоподписанный сертификат для фиш сервера если нет Let's Encrypt
+    if [ ! -f "$SSL_DIR/letsencrypt.crt" ]; then
+        log_info "Создание самоподписанного сертификата для фиш сервера..."
+        openssl req -newkey rsa:2048 -nodes -keyout "$SSL_DIR/letsencrypt.key" \
+            -x509 -days 365 -out "$SSL_DIR/letsencrypt.crt" \
+            -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
+        chmod 600 "$SSL_DIR/letsencrypt.key"
+        chmod 644 "$SSL_DIR/letsencrypt.crt"
+    fi
+}
+
+update_config() {
+    log_info "Обновление конфигурации GoPhish..."
+    
+    mkdir -p "$CONFIG_DIR"
+    
+    cat > "$CONFIG_DIR/config.json" << CONFIG_EOF
+{
+  "admin_server": {
+    "listen_url": "0.0.0.0:3333",
+    "use_tls": true,
+    "cert_path": "ssl/gophish_admin.crt",
+    "key_path": "ssl/gophish_admin.key"
+  },
+  "phish_server": {
+    "listen_url": "0.0.0.0:443",
+    "use_tls": true,
+    "cert_path": "ssl/letsencrypt.crt",
+    "key_path": "ssl/letsencrypt.key"
+  },
+  "db_name": "sqlite3",
+  "db_path": "gophish.db",
+  "migrations_prefix": "db/db_",
+  "contact_address": "",
+  "logging": {
+    "filename": "",
+    "level": ""
+  }
+}
+CONFIG_EOF
+
+    log_info "Конфигурация обновлена!"
+}
+
+renew_admin_certificate() {
+    log_info "Обновление SSL сертификата для админ панели..."
+    
+    if [ "$DOMAIN" = "your_domain" ]; then
+        log_error "Нужно указать домен для обновления!"
+        log_error "Использование: $0 renew-admin DOMAIN"
+        exit 1
+    fi
+    
+    stop_container
+    
+    certbot renew --force-renewal --cert-name "$DOMAIN"
+    
+    install_admin_certificates
+    update_config
+    start_container
+    
+    log_info "SSL сертификат админ панели успешно обновлен!"
+}
+
+renew_phish_certificate() {
+    log_info "Обновление SSL сертификата для фиш сервера..."
+    
+    if [ "$DOMAIN" = "your_domain" ]; then
+        log_error "Нужно указать домен для обновления!"
+        log_error "Использование: $0 renew-phish DOMAIN"
+        exit 1
+    fi
+    
+    stop_container
+    
+    certbot renew --force-renewal --cert-name "$DOMAIN"
+    
+    install_phish_certificates
+    update_config
+    start_container
+    
+    log_info "SSL сертификат фиш сервера успешно обновлен!"
+}
+
+renew_all_certificates() {
+    log_info "Обновление всех SSL сертификатов..."
+    
+    stop_container
+    
+    certbot renew --force-renewal
+    
+    # Попробуем найти и установить все доступные сертификаты
+    if ls /etc/letsencrypt/live/*/fullchain.pem 1> /dev/null 2>&1; then
+        for cert_dir in /etc/letsencrypt/live/*/; do
+            domain_name=$(basename "$cert_dir")
+            if [ "$domain_name" != "*" ]; then
+                log_info "Найден сертификат для домена: $domain_name"
+                DOMAIN="$domain_name"
+                
+                # Устанавливаем как admin (можно изменить логику)
+                install_admin_certificates
+            fi
+        done
+    fi
+    
+    update_config
+    start_container
+    
+    log_info "Все SSL сертификаты обновлены!"
 }
 
 check_certificate() {
-    log_info "Проверка SSL сертификата для домена: $DOMAIN"
+    local cert_type=$1
+    local cert_file=""
     
-    if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    case $cert_type in
+        "admin")
+            cert_file="$SSL_DIR/gophish_admin.crt"
+            log_info "Проверка SSL сертификата АДМИН ПАНЕЛИ"
+            ;;
+        "phish")
+            cert_file="$SSL_DIR/letsencrypt.crt"
+            log_info "Проверка SSL сертификата ФИش СЕРВЕРА"
+            ;;
+        *)
+            log_error "Неизвестный тип сертификата: $cert_type"
+            exit 1
+            ;;
+    esac
+    
+    if [ -f "$cert_file" ]; then
         echo "=== Информация о сертификате ==="
-        openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -subject -issuer -dates
+        openssl x509 -in "$cert_file" -noout -subject -issuer -dates
         echo ""
         
         # Проверка срока действия
-        expiry_date=$(openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -enddate | cut -d= -f2)
+        expiry_date=$(openssl x509 -in "$cert_file" -noout -enddate | cut -d= -f2)
         expiry_timestamp=$(date -d "$expiry_date" +%s)
         current_timestamp=$(date +%s)
         days_left=$(( (expiry_timestamp - current_timestamp) / 86400 ))
@@ -233,7 +416,7 @@ check_certificate() {
             log_info "Сертификат действителен."
         fi
     else
-        log_error "SSL сертификат не найден для домена $DOMAIN"
+        log_error "Сертификат не найден: $cert_file"
         exit 1
     fi
 }
@@ -278,9 +461,23 @@ show_status() {
     fi
     
     echo ""
+    log_info "SSL Certificates:"
+    if [ -f "$SSL_DIR/gophish_admin.crt" ]; then
+        echo "✅ Admin SSL Certificate - установлен"
+    else
+        echo "❌ Admin SSL Certificate - отсутствует"
+    fi
+    
+    if [ -f "$SSL_DIR/letsencrypt.crt" ]; then
+        echo "✅ Phish SSL Certificate - установлен"
+    else
+        echo "❌ Phish SSL Certificate - отсутствует"
+    fi
+    
+    echo ""
     log_info "URLs:"
-    echo "🔐 Admin panel: https://localhost:3333"
-    echo "🎯 Phishing server: https://localhost:443"
+    echo "🔐 Admin panel: https://your-admin-domain.com:3333"
+    echo "🎯 Phishing server: https://your-phish-domain.com:443"
     echo "📝 Default login: admin / gophish"
 }
 
@@ -293,6 +490,12 @@ deploy_all() {
     # Создаём директории
     mkdir -p "$SSL_DIR" "$DATA_DIR" "$CONFIG_DIR"
     
+    # Создаем самоподписанные сертификаты для начала
+    create_self_signed_certificates
+    
+    # Обновляем конфигурацию
+    update_config
+    
     # Запускаем
     start_container
     
@@ -301,6 +504,9 @@ deploy_all() {
     show_status
     
     log_info "Деплой завершён!"
+    log_warn "Для получения Let's Encrypt сертификатов используйте:"
+    log_warn "  $0 obtain-admin your-admin-domain.com your-email@example.com"
+    log_warn "  $0 obtain-phish your-phish-domain.com your-email@example.com"
 }
 
 # Главная логика
@@ -308,19 +514,31 @@ case "$COMMAND" in
     "setup")
         setup_dependencies
         ;;
-    "obtain")
+    "obtain-admin")
         check_prerequisites
-        obtain_certificate
+        obtain_admin_certificate
         ;;
-    "renew")
+    "obtain-phish")
         check_prerequisites
-        renew_certificate
+        obtain_phish_certificate
         ;;
-    "install")
-        install_certificates
+    "renew-admin")
+        check_prerequisites
+        renew_admin_certificate
         ;;
-    "check")
-        check_certificate
+    "renew-phish")
+        check_prerequisites
+        renew_phish_certificate
+        ;;
+    "renew-all")
+        check_prerequisites
+        renew_all_certificates
+        ;;
+    "check-admin")
+        check_certificate "admin"
+        ;;
+    "check-phish")
+        check_certificate "phish"
         ;;
     "restart")
         restart_container
